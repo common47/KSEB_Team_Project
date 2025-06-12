@@ -1,36 +1,52 @@
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import HTMLResponse, StreamingResponse
-import cv2
-import numpy as np
-import asyncio
-import json
-from ultralytics import YOLO
-import uvicorn
-import torch
-import pandas as pd
-import os
-import seaborn as sns
-import pyttsx3
-import time
-import threading
+"""
+화재 감지 웹 애플리케이션
+- 실시간 화재 감지 (YOLO 모델)
+- 화재 감지 시 음성 알림 (TTS)
+- 실시간 비디오 스트리밍
+- 비디오 녹화 기능
+- 웹 인터페이스
+- WebSocket 실시간 통신
+"""
 
-app = FastAPI()
+# 1. 필요한 라이브러리 임포트
+from fastapi import FastAPI, WebSocket  # FastAPI 웹 프레임워크와 WebSocket 지원
+from fastapi.responses import HTMLResponse, StreamingResponse  # HTML 응답과 스트리밍 응답
+import cv2  # OpenCV - 비디오 캡처 및 이미지 처리
+import numpy as np  # 수치 연산
+import asyncio  # 비동기 프로그래밍
+import json  # JSON 데이터 처리
+from ultralytics import YOLO  # YOLO 객체 감지 모델
+import uvicorn  # ASGI 서버
+import torch  # PyTorch (YOLO 백엔드)
+import pandas as pd  # 데이터 처리
+import os  # 파일 시스템 작업
+import seaborn as sns  # 데이터 시각화
+import pyttsx3  # TTS(Text-to-Speech) 엔진
+import time  # 시간 관리
+import threading  # 스레드 처리
 
-# TTS 엔진 초기화
-tts_engine = pyttsx3.init()
-tts_engine.setProperty('rate', 150)  # 말하기 속도 설정
-tts_engine.setProperty('volume', 1.0)  # 볼륨 설정
+# FastAPI 애플리케이션 초기화
+app = FastAPI(title="화재 감지 시스템")
 
-# TTS 상태 관리를 위한 전역 변수
-is_speaking = False
-last_tts_time = 0
-TTS_INTERVAL = 5 # TTS 간격 (초)
+# 2. TTS(음성 알림) 설정
+tts_engine = pyttsx3.init()  # TTS 엔진 초기화
+tts_engine.setProperty('rate', 150)  # 말하기 속도 설정 (기본값: 200)
+tts_engine.setProperty('volume', 1.0)  # 볼륨 설정 (0.0 ~ 1.0)
+
+# TTS 상태 관리 변수
+is_speaking = False  # 현재 TTS 실행 중인지 여부
+last_tts_time = 0  # 마지막 TTS 실행 시간
+TTS_INTERVAL = 5  # TTS 실행 간격 (초)
 
 def speak_text(text):
+    """
+    TTS를 사용하여 텍스트를 음성으로 변환
+    - 마지막 TTS 실행 후 5초가 지났고, 현재 말하고 있지 않은 경우에만 실행
+    - 별도의 스레드에서 TTS를 실행하여 메인 프로그램이 블록되지 않도록 함
+    """
     global is_speaking, last_tts_time
     current_time = time.time()
     
-    # 마지막 TTS 실행 후 5초가 지났고, 현재 말하고 있지 않은 경우에만 실행
     if current_time - last_tts_time >= TTS_INTERVAL and not is_speaking:
         is_speaking = True
         last_tts_time = current_time
@@ -41,27 +57,30 @@ def speak_text(text):
             tts_engine.runAndWait()
             is_speaking = False
         
-        # 별도의 스레드에서 TTS 실행
         threading.Thread(target=speak).start()
 
-# 사용할 모델 선택
-model_path = 'fire_best.pt'
-model = YOLO(model_path)
+# 3. YOLO 모델 초기화
+model_path = 'fire_best.pt'  # 학습된 YOLO 모델 경로
+model = YOLO(model_path)  # YOLO 모델 로드
 
-# 전역 변수로 카메라 객체 관리
-camera = None
-recording = False
-out = None
-is_camera_active = False
+# 4. 카메라 관리 변수
+camera = None  # 카메라 객체
+recording = False  # 녹화 상태
+out = None  # 녹화 파일 객체
+is_camera_active = False  # 카메라 활성화 상태
 
 def get_camera():
+    """
+    카메라 초기화 및 설정
+    - 웹캠 0번 시도 후 실패시 1번 시도
+    - 해상도 1280x720 설정
+    """
     global camera, is_camera_active
     if camera is None and is_camera_active:
-        # 웹캠 번호를 0으로 변경 (기본 웹캠)
-        camera = cv2.VideoCapture(0)
+        camera = cv2.VideoCapture(0)  # 기본 웹캠 시도
         if not camera.isOpened():
             print("웹캠을 열 수 없습니다. 다른 웹캠 번호를 시도합니다.")
-            camera = cv2.VideoCapture(1)
+            camera = cv2.VideoCapture(1)  # 외부 웹캠 시도
             if not camera.isOpened():
                 print("웹캠을 열 수 없습니다. 웹캠이 연결되어 있는지 확인해주세요.")
                 return None
@@ -72,6 +91,7 @@ def get_camera():
     return camera
 
 def release_camera():
+    """카메라 리소스 해제"""
     global camera, is_camera_active
     if camera is not None:
         camera.release()
@@ -80,6 +100,13 @@ def release_camera():
         print("웹캠이 종료되었습니다.")
 
 def generate_frames():
+    """
+    비디오 프레임 생성 및 처리
+    - 카메라에서 프레임 읽기
+    - YOLO로 객체 감지
+    - 화재 감지 시 TTS 알림
+    - 녹화 중이면 프레임 저장
+    """
     global recording, out, is_camera_active
     camera = get_camera()
     if camera is None:
@@ -102,7 +129,7 @@ def generate_frames():
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     conf = box.conf[0]
                     cls = int(box.cls[0])
-                    if conf > 0.5:
+                    if conf > 0.5:  # 신뢰도 50% 이상인 경우만 표시
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                         cv2.putText(frame, f'{model.names[cls]} {conf:.2f}', (x1, y1 - 10),
                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
@@ -116,6 +143,7 @@ def generate_frames():
                 if recording and out is not None:
                     out.write(frame)
                 
+                # 프레임을 JPEG로 인코딩
                 ret, buffer = cv2.imencode('.jpg', frame)
                 frame = buffer.tobytes()
                 yield (b'--frame\r\n'
@@ -124,13 +152,16 @@ def generate_frames():
                 print(f"프레임 처리 중 오류 발생: {e}")
                 break
 
+# 5. FastAPI 엔드포인트
 @app.get("/video_feed")
 async def video_feed():
+    """실시간 비디오 스트림 제공"""
     return StreamingResponse(generate_frames(),
                             media_type='multipart/x-mixed-replace; boundary=frame')
 
 @app.get("/start_recording")
 async def start_recording():
+    """녹화 시작"""
     global recording, out, is_camera_active
     if not recording:
         is_camera_active = True
@@ -142,6 +173,7 @@ async def start_recording():
 
 @app.get("/stop_recording")
 async def stop_recording():
+    """녹화 중지"""
     global recording, out, is_camera_active
     if recording:
         recording = False
@@ -252,16 +284,18 @@ html = """
 
 @app.get("/")
 async def get():
+    """메인 페이지 제공"""
     return HTMLResponse(html)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket을 통한 실시간 비디오 스트리밍
+    - 객체 감지 결과도 함께 전송
+    """
     await websocket.accept()
     
-    # 웹캠 캡처 객체 생성 (1은 외부 웹캠)
     cap = cv2.VideoCapture(1)
-    
-    # 웹캠 해상도 설정
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     
@@ -283,7 +317,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = box.conf[0]
                 cls = int(box.cls[0])
-                if conf > 0.5:  # 신뢰도가 0.5 이상인 경우만 표시
+                if conf > 0.5:
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                     cv2.putText(frame, f'{model.names[cls]} {conf:.2f}', (x1, y1 - 10),
                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
@@ -306,8 +340,14 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         cap.release()
         if out is not None:
-            out.release() 
+            out.release()
 
-
+# 6. 메인 실행
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload= True)
+    """
+    uvicorn 서버 실행
+    - host="0.0.0.0": 외부에서도 접속 가능
+    - port=8000: 기본 포트
+    - reload=True: 코드 변경 시 자동 재시작
+    """
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
