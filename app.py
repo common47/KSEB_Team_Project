@@ -30,7 +30,7 @@ def speak_text(text):
     global is_speaking, last_tts_time
     current_time = time.time()
     
-    # 마지막 TTS 실행 후 10초가 지났고, 현재 말하고 있지 않은 경우에만 실행
+    # 마지막 TTS 실행 후 5초가 지났고, 현재 말하고 있지 않은 경우에만 실행
     if current_time - last_tts_time >= TTS_INTERVAL and not is_speaking:
         is_speaking = True
         last_tts_time = current_time
