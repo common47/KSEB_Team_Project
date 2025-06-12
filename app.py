@@ -9,8 +9,39 @@ import torch
 import pandas as pd
 import os
 import seaborn as sns
+import pyttsx3
+import time
+import threading
 
 app = FastAPI()
+
+# TTS 엔진 초기화
+tts_engine = pyttsx3.init()
+tts_engine.setProperty('rate', 150)  # 말하기 속도 설정
+tts_engine.setProperty('volume', 1.0)  # 볼륨 설정
+
+# TTS 상태 관리를 위한 전역 변수
+is_speaking = False
+last_tts_time = 0
+TTS_INTERVAL = 5 # TTS 간격 (초)
+
+def speak_text(text):
+    global is_speaking, last_tts_time
+    current_time = time.time()
+    
+    # 마지막 TTS 실행 후 10초가 지났고, 현재 말하고 있지 않은 경우에만 실행
+    if current_time - last_tts_time >= TTS_INTERVAL and not is_speaking:
+        is_speaking = True
+        last_tts_time = current_time
+        
+        def speak():
+            global is_speaking
+            tts_engine.say(text)
+            tts_engine.runAndWait()
+            is_speaking = False
+        
+        # 별도의 스레드에서 TTS 실행
+        threading.Thread(target=speak).start()
 
 # 사용할 모델 선택
 model_path = 'fire_best.pt'
@@ -65,6 +96,7 @@ def generate_frames():
                 results = model(frame)[0]
                 
                 # 결과 시각화
+                fire_detected = False
                 for box in results.boxes:
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     conf = box.conf[0]
@@ -73,6 +105,11 @@ def generate_frames():
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                         cv2.putText(frame, f'{model.names[cls]} {conf:.2f}', (x1, y1 - 10),
                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        
+                        # 화재가 감지된 경우
+                        if model.names[cls] == 'fire' and not fire_detected:
+                            fire_detected = True
+                            speak_text("화재가 감지되었습니다. 주의하세요.")
                 
                 # 녹화 중이면 프레임 저장
                 if recording and out is not None:
