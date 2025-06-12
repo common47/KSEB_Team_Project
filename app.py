@@ -5,6 +5,7 @@ import numpy as np
 import asyncio
 import json
 from ultralytics import YOLO
+import uvicorn
 import torch
 import pandas as pd
 import os
@@ -306,3 +307,7 @@ async def websocket_endpoint(websocket: WebSocket):
         cap.release()
         if out is not None:
             out.release() 
+
+
+if __name__ == "__main__":
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload= True)
