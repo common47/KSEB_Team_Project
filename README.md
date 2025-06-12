@@ -24,3 +24,7 @@ YOLOv11n을 통해 Roboflow에서 먼저 불(화재)와 연기를 분류하고
 
 필요한 모듈을 requirements.txt로 정리.
 app.py에서 화재 발생시 TTS 음성 메세지 출력 기능 추가
+
+# 1.0.3
+
+기초 Base Code 추가
