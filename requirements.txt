@@ -1,0 +1,14 @@
+fastapi==0.115.12
+starlette==0.46.2
+pydantic==2.11.5
+typing-extensions==4.14.0
+opencv-python==4.9.0.80
+ultralytics==8.3.153
+torch==2.3.0+cu118
+torchvision==0.18.0+cu118
+numpy==1.23.5
+pandas==2.3.0
+python-dateutil==2.9.0.post0
+pytz==2025.2
+seaborn==0.13.2
+matplotlib==3.8.3
