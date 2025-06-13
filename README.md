@@ -14,6 +14,9 @@ YOLOv11n을 통해 Roboflow에서 먼저 불(화재)와 연기를 분류하고
 
 이것을 통해, 객체 인식을 통해 빠르게 화재를 감지할 수 있기를 기도합니다.
 
+YOLO 모델을 통해 화재 객체 인식을 실행하여 얻은 Performance Matries는 밑의 사진과 같습니다.
+
+![results](https://github.com/user-attachments/assets/5f521572-f274-4803-93db-b789f1dd3c1e)
 
 ## 1.0.1
 
@@ -29,5 +32,5 @@ app.py에서 화재 발생시 TTS 음성 메세지 출력 기능 추가
 
 기초 Base Code 추가, YOLO 모델 실행 결과 값 추가
 
-![results](https://github.com/user-attachments/assets/5f521572-f274-4803-93db-b789f1dd3c1e)
+
 
