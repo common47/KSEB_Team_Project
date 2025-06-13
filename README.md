@@ -27,4 +27,7 @@ app.py에서 화재 발생시 TTS 음성 메세지 출력 기능 추가
 
 # 1.0.3
 
-기초 Base Code 추가
+기초 Base Code 추가, YOLO 모델 실행 결과 값 추가
+
+![results](https://github.com/user-attachments/assets/5f521572-f274-4803-93db-b789f1dd3c1e)
+
